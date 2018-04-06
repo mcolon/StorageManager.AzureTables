@@ -15,21 +15,18 @@ using StorageManager.Storage;
 
 namespace StorageManager.AzureTables
 {
-    internal class TableStorageWrapper<T> : StorageWrapper<T>
+    public class TableStorageWrapper<T> : StorageWrapper<T>
     {
         const string SCHEMA_CONSTANT_STRING = "SCHEMA_DEFINITION_HASH";
         private const int TimeoutForStorageResource = 5000;
 
-        static AutoResetEvent _creatingTable = new AutoResetEvent(true);
-
+        static readonly AutoResetEvent _creatingTable = new AutoResetEvent(true);
 
         private CloudTable _table;
 
-        public TableStorageWrapper(StorageEntityDefinition<T> definition, IStorageConfiguration configuration, StorageEntityManager<T> Provider) : base(definition, configuration, Provider)
+        public TableStorageWrapper(StorageEntityDefinition<T> definition, IStorageConfiguration configuration) : base(definition, configuration)
         {
         }
-
-
 
 
 
@@ -40,13 +37,12 @@ namespace StorageManager.AzureTables
             await ExecuteBatchOperations(operations).ConfigureAwait(false);
         }
 
-        public override async Task Upsert(T entity)
+        public override async Task InsertOrUpdate(T entity)
         {
             var operations = await BuildTableOperationUpsert(entity).ConfigureAwait(false);
 
             await ExecuteBatchOperations(operations).ConfigureAwait(false);
         }
-
 
         public override async Task Update(T entity)
         {
@@ -64,8 +60,6 @@ namespace StorageManager.AzureTables
 
 
 
-
-
         public override async Task Insert(IEnumerable<T> entity)
         {
             var operations = entity.SelectMany(BuildTableOperationInsert).ToList();
@@ -73,7 +67,7 @@ namespace StorageManager.AzureTables
             await ExecuteBatchOperations(operations).ConfigureAwait(false);
         }
 
-        public override async Task Upsert(IEnumerable<T> entities)
+        public override async Task InsertOrUpdate(IEnumerable<T> entities)
         {
             List<TableOperation> operations = new List<TableOperation>();
 
@@ -113,8 +107,6 @@ namespace StorageManager.AzureTables
 
 
 
-
-
         private List<TableOperation> BuildTableOperationInsert(T entity)
         {
             List<KeyValuePair<string, EntityProperty>> fields = GetEntityFilterableFields(entity).ToList();
@@ -147,10 +139,10 @@ namespace StorageManager.AzureTables
 
             operations.AddRange(GeneratePersistPartitionData(entity, serializedField, fields)
                 .Select(TableOperation.InsertOrReplace));
-            var idValue = string.Join(StorageQueryBuilder.PARTITION_FIELD_SEPARATOR,
-                entityId.Select(StorageQueryBuilder.NormalizeStringValue));
+            var idValue = string.Join(TableStorageQueryBuilder.PARTITION_FIELD_SEPARATOR,
+                entityId.Select(TableStorageQueryBuilder.NormalizeStringValue));
 
-            var old = await GetById(StorageQueryBuilder.GetTableKeyNormalizedValue(idValue)).ConfigureAwait(false);
+            var old = await GetById(TableStorageQueryBuilder.GetTableKeyNormalizedValue(idValue)).ConfigureAwait(false);
             if (old != null)
             {
                 var oldFields = GetEntityFilterableFields(old);
@@ -167,8 +159,8 @@ namespace StorageManager.AzureTables
         private async Task<List<TableOperation>> BuildTableOperationUpdate(T entity)
         {
             var entityIdValues = EntityDefinition.GetIdValues(entity);
-            var idString = string.Join(StorageQueryBuilder.PARTITION_FIELD_SEPARATOR,
-                entityIdValues.Select(StorageQueryBuilder.NormalizeStringValue));
+            var idString = string.Join(TableStorageQueryBuilder.PARTITION_FIELD_SEPARATOR,
+                entityIdValues.Select(TableStorageQueryBuilder.NormalizeStringValue));
 
             var serializedField = EntityProperty.GeneratePropertyForByteArray(BSonConvert.SerializeObject(entity));
 
@@ -193,8 +185,8 @@ namespace StorageManager.AzureTables
         private async Task<List<TableOperation>> BuildTableOperationDelete(T entity)
         {
             var entityIdValues = EntityDefinition.GetIdValues(entity);
-            var idString = string.Join(StorageQueryBuilder.PARTITION_FIELD_SEPARATOR,
-                entityIdValues.Select(StorageQueryBuilder.NormalizeStringValue));
+            var idString = string.Join(TableStorageQueryBuilder.PARTITION_FIELD_SEPARATOR,
+                entityIdValues.Select(TableStorageQueryBuilder.NormalizeStringValue));
 
             var record = GenerateRecordMainPartition(entity, null, null);
 
@@ -229,16 +221,16 @@ namespace StorageManager.AzureTables
         {
             List<DynamicTableEntity> result = new List<DynamicTableEntity>();
 
-            foreach (var partition in EntityDefinition.GetPartitionsValues(entity))
+            foreach (var partition in GetPartitionsValues(entity))
             {
                 var entityIdValues = EntityDefinition.GetIdValues(entity);
-                var idString = string.Join(StorageQueryBuilder.PARTITION_FIELD_SEPARATOR, entityIdValues.Select(StorageQueryBuilder.NormalizeStringValue));
+                var idString = string.Join(TableStorageQueryBuilder.PARTITION_FIELD_SEPARATOR, entityIdValues.Select(TableStorageQueryBuilder.NormalizeStringValue));
 
-                var partitionKey = StorageQueryBuilder.GetPartitionKeyValue(partition.Key, partition.Value);
-                partitionKey = string.Join(StorageQueryBuilder.PARTITION_NAME_SEPARATOR, partition.Key, partitionKey);
+                var partitionKey = TableStorageQueryBuilder.GetPartitionKeyValue(partition.Key, partition.Value);
+                partitionKey = string.Join(TableStorageQueryBuilder.PARTITION_NAME_SEPARATOR, partition.Key, partitionKey);
 
-                DynamicTableEntity record = new DynamicTableEntity(partitionKey, StorageQueryBuilder.GetTableKeyNormalizedValue(idString));
-                record.ETag = "*";
+                DynamicTableEntity record = new DynamicTableEntity(partitionKey,
+                    TableStorageQueryBuilder.GetTableKeyNormalizedValue(idString)) {ETag = "*"};
                 foreach (var field in fields)
                 {
                     if (field.Value != null)
@@ -254,9 +246,9 @@ namespace StorageManager.AzureTables
         private DynamicTableEntity GenerateRecordMainPartition(T entity, EntityProperty serializedField, IEnumerable<KeyValuePair<string, EntityProperty>> fields)
         {
             var entityIdValues = EntityDefinition.GetIdValues(entity);
-            var idString = string.Join(StorageQueryBuilder.PARTITION_FIELD_SEPARATOR, entityIdValues.Select(StorageQueryBuilder.NormalizeStringValue));
+            var idString = string.Join(TableStorageQueryBuilder.PARTITION_FIELD_SEPARATOR, entityIdValues.Select(TableStorageQueryBuilder.NormalizeStringValue));
 
-            DynamicTableEntity record = new DynamicTableEntity(StorageQueryBuilder.MAIN_PARTITION_NAME, StorageQueryBuilder.GetTableKeyNormalizedValue(idString)) {ETag = "*"};
+            DynamicTableEntity record = new DynamicTableEntity(TableStorageQueryBuilder.MAIN_PARTITION_NAME, TableStorageQueryBuilder.GetTableKeyNormalizedValue(idString)) {ETag = "*"};
 
             if (fields != null)
             {
@@ -451,7 +443,6 @@ namespace StorageManager.AzureTables
         private async Task<StorageQueryResult<T>> ExecuteQueryAsync(TableStorageQueryContext queryContext)
         {
             var table = await TableAsync().ConfigureAwait(false);
-            var continuationInfos = new List<TableStorageContinuationInfo>();
 
             var result = await table.ExecuteQuerySegmentedAsync(queryContext.ContinuationInfo.Query, queryContext.ContinuationInfo.ContinuationToken).ConfigureAwait(false);
             queryContext.ContinuationInfo.ContinuationToken = result.ContinuationToken;
@@ -460,10 +451,15 @@ namespace StorageManager.AzureTables
 
             return new StorageQueryResult<T>
             {
-                Contexts = BSonConvert.SerializeToBase64String(queryContext),
+                QueryContext = BSonConvert.SerializeToBase64String(queryContext),
                 Records = records,
                 HasMoreResult = queryContext.HasMoreResult
             };
+        }
+
+        public Dictionary<string, IEnumerable<string>> GetPartitionsValues(T entity)
+        {
+            return EntityDefinition.Partitions().Where(p => !string.IsNullOrWhiteSpace(p.Name)).ToDictionary(k => k.Name, v => v.Expressions.Select(e => TableStorageQueryBuilder.NormalizeStringValue(e.Evaluate(entity) ?? "NULL")));
         }
     }
 }

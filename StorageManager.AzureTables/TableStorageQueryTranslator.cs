@@ -26,7 +26,7 @@ namespace StorageManager.AzureTables
             {
                 return new TableQuery
                 {
-                    FilterString = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, StorageQueryBuilder.MAIN_PARTITION_NAME),
+                    FilterString = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, TableStorageQueryBuilder.MAIN_PARTITION_NAME),
                     TakeCount = Take
                 };
             }
@@ -44,7 +44,7 @@ namespace StorageManager.AzureTables
         public static TableQuery GetQueryById(string id)
         {
             var query = TableQuery.CombineFilters(
-                TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, StorageQueryBuilder.MAIN_PARTITION_NAME),
+                TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.Equal, TableStorageQueryBuilder.MAIN_PARTITION_NAME),
                 TableOperators.And,
                 TableQuery.GenerateFilterCondition("RowKey", QueryComparisons.Equal, id));
 
@@ -85,16 +85,16 @@ namespace StorageManager.AzureTables
             return partitionAccessData.BuildQuery(Take);
         }
 
-        private StorageQueryBuilder MatchPartitionAndFilters(List<StorageComparisonExpression> grp)
+        private TableStorageQueryBuilder MatchPartitionAndFilters(List<StorageComparisonExpression> grp)
         {
             var partitions = EntityDefinition.Partitions();
             var equalConditions = grp.Where(c => c.Operator == QueryComparisonOperator.Equal);
 
 
-            StorageQueryBuilder candidatePartition = null;
+            TableStorageQueryBuilder candidatePartition = null;
             foreach (var partition in partitions)
             {
-                StorageQueryBuilder current = new StorageQueryBuilder(partition.Name, EntityDefinition);
+                TableStorageQueryBuilder current = new TableStorageQueryBuilder(partition.Name, EntityDefinition);
                 List<string> selectedFields = new List<string>();
                 foreach (var fld in partition.Expressions)
                 {
